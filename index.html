@@ -82,7 +82,7 @@ h1{margin:0 0 8px;font-size:clamp(27px,5vw,44px)}h2{margin:0 0 8px}.sub{color:va
 <button class="action secondary" onclick="goSubjects()">← Choose Another Subject</button>
 <h1 id="subjectHeading" style="margin-top:20px"></h1>
 <p class="sub" id="subjectSub"></p>
-<div class="notice">Choose a lesson. Each lesson contains 60 Multiple Choice, 10 True/False, 10 Multiple Answer, 10 Scenario/Application, and 10 Challenging questions.</div>
+<div class="notice">Choose a lesson. Each reviewer uses the number and types of questions that fit the lesson material.</div>
 </div>
 <div class="lessons" id="lessonCards"></div>
 </section>
@@ -96,7 +96,7 @@ h1{margin:0 0 8px;font-size:clamp(27px,5vw,44px)}h2{margin:0 0 8px}.sub{color:va
 <div class="lessons" id="partCards"></div>
 </section>
 
-<section id="quiz">
+<section id="quiz" style="display:none">
 <div class="topbar">
 <div class="stats"><span id="lessonTitle"></span><span id="counter"></span><span id="scoreText">Score: 0</span></div>
 <div class="bar"><div class="fill" id="fill"></div></div>
@@ -308,8 +308,28 @@ function renderPartCards(){
     box.appendChild(b);
   });
 }
+
+function ensureQuizCard(){
+  const card=document.querySelector('.qcard');
+  if(!card) return;
+  if(!document.getElementById('question')){
+    card.innerHTML=`
+      <div class="badge" id="typeBadge"></div>
+      <div class="question" id="question"></div>
+      <div class="options" id="options"></div>
+      <div id="feedback" class="feedback hidden"></div>
+      <div class="buttons">
+        <button class="action" id="submitBtn" onclick="submitAnswer()">Check Answer</button>
+        <button class="action secondary" id="nextBtn" onclick="nextQuestion()" disabled>Next Question →</button>
+        <button class="action secondary" onclick="goHome()">Back to Lessons</button>
+      </div>
+      <div class="source" id="source"></div>`;
+  }
+}
+
 function startPart(key){
   part=key; current=0; score=0; answered=false; selected=[];
+  ensureQuizCard();
   document.getElementById('partSelect').style.display='none';
   document.getElementById('quiz').style.display='block';
   render();
@@ -331,23 +351,49 @@ function goParts(){
  window.scrollTo({top:0,behavior:'smooth'});
 }
 function render(){
- const p=partInfo[part];
- const bank=getPartBank();
- const q=bank[current];
- if(!q){ finishQuiz(); return; }
- answered=false;selected=[];
- document.getElementById('lessonTitle').textContent=lessonMeta[lesson].name+" • "+p.name;
- document.getElementById('counter').textContent=`Question ${current+1} of ${bank.length}`;
- document.getElementById('scoreText').textContent=`Score: ${score}`;
- document.getElementById('fill').style.width=((current)/bank.length*100)+"%";
- document.getElementById('typeBadge').textContent=typeNames[q.type] || q.type;
- document.getElementById('question').textContent=q.q;
- const box=document.getElementById('options');box.innerHTML='';
- q.options.forEach((o,i)=>{const b=document.createElement('button');b.className='option';b.textContent=o;b.onclick=()=>select(i);box.appendChild(b)});
- document.getElementById('feedback').className='feedback hidden';document.getElementById('feedback').innerHTML='';
- document.getElementById('submitBtn').disabled=false;document.getElementById('nextBtn').disabled=true;
- document.getElementById('source').textContent="Review source: "+q.source;
- window.scrollTo({top:0,behavior:'smooth'});
+  ensureQuizCard();
+  const p=partInfo[part];
+  const bank=getPartBank();
+
+  if(bank.length===0){
+    showResult();
+    return;
+  }
+
+  if(current>=bank.length){
+    showResult();
+    return;
+  }
+
+  const q=bank[current];
+  answered=false;
+  selected=[];
+
+  document.getElementById('lessonTitle').textContent=lessonMeta[lesson].name+" • "+p.name;
+  document.getElementById('counter').textContent=`Question ${current+1} of ${bank.length}`;
+  document.getElementById('scoreText').textContent=`Score: ${score}`;
+  document.getElementById('fill').style.width=((current)/bank.length*100)+"%";
+  document.getElementById('typeBadge').textContent=typeNames[q.type] || q.type;
+  document.getElementById('question').textContent=q.q;
+
+  const box=document.getElementById('options');
+  box.innerHTML='';
+  q.options.forEach((o,i)=>{
+    const b=document.createElement('button');
+    b.className='option';
+    b.textContent=o;
+    b.onclick=()=>select(i);
+    box.appendChild(b);
+  });
+
+  const feedback=document.getElementById('feedback');
+  feedback.className='feedback hidden';
+  feedback.innerHTML='';
+
+  document.getElementById('submitBtn').disabled=false;
+  document.getElementById('nextBtn').disabled=true;
+  document.getElementById('source').textContent="Review source: "+q.source;
+  window.scrollTo({top:0,behavior:'smooth'});
 }
 function select(i){
  if(answered)return;
@@ -380,31 +426,42 @@ function submitAnswer(){
  <strong>Why:</strong> ${q.explanation}`;
  document.getElementById('scoreText').textContent=`Score: ${score}`;
  document.getElementById('submitBtn').disabled=true;document.getElementById('nextBtn').disabled=false;
- document.getElementById('fill').style.width=((current+1)/100*100)+"%";
+ const bank=getPartBank();
+ document.getElementById('fill').style.width=((current+1)/bank.length*100)+"%";
 }
 function nextQuestion(){
- if(!answered)return;
- const p=partInfo[part];
- current++;
- if(current>=p.count){showResult();return}
- render();
+  if(!answered)return;
+  const bank=getPartBank();
+  current++;
+  if(current>=bank.length){
+    showResult();
+    return;
+  }
+  render();
 }
 function showResult(){
- const p=partInfo[part];
- document.getElementById('fill').style.width='100%';
- const pct=Math.round(score/p.count*100);
- document.querySelector('.qcard').innerHTML=`
- <div class="result">
- <div class="badge">Review Complete</div>
- <h2>${lessonMeta[lesson].title}</h2>
- <p class="sub">${p.name}</p>
- <div class="score">${score}/${getPartBank().length}</div>
- <p class="sub">You answered ${score} questions correctly (${pct}%).</p>
- <div class="buttons" style="justify-content:center">
- <button class="action" onclick="startPart('${part}')">Retry This Part</button>
- <button class="action secondary" onclick="goParts()">Choose Another Part</button>
- <button class="action secondary" onclick="goHome()">Back to Lessons</button>
- </div>
- </div>`;
+  const p=partInfo[part];
+  const bank=getPartBank();
+  const total=bank.length;
+  const pct=total ? Math.round(score/total*100) : 0;
+
+  document.getElementById('fill').style.width='100%';
+  document.getElementById('counter').textContent=`Completed ${total} questions`;
+  document.getElementById('scoreText').textContent=`Score: ${score}/${total}`;
+
+  const card=document.querySelector('.qcard');
+  card.innerHTML=`
+    <div class="result">
+      <div class="badge">Review Complete</div>
+      <h2>${lessonMeta[lesson].title}</h2>
+      <p class="sub">${p.name}</p>
+      <div class="score">${score}/${total}</div>
+      <p class="sub">You answered ${score} questions correctly (${pct}%).</p>
+      <div class="buttons" style="justify-content:center">
+        <button class="action" onclick="startPart('${part}')">Retry This Part</button>
+        <button class="action secondary" onclick="goParts()">Choose Another Part</button>
+        <button class="action secondary" onclick="goHome()">Back to Lessons</button>
+      </div>
+    </div>`;
 }
 </script>
